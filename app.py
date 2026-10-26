@@ -2,126 +2,140 @@ import streamlit as st
 import pandas as pd
 import os
 
-# ---------------------------------------------------------
+# =========================================================
 # PAGE CONFIGURATION
-# ---------------------------------------------------------
+# =========================================================
 st.set_page_config(
     page_title="Care Transition Analytics",
     page_icon="📊",
     layout="wide"
 )
 
-# ---------------------------------------------------------
+# =========================================================
 # TITLE
-# ---------------------------------------------------------
+# =========================================================
 st.title("📊 Care Transition Analytics")
 st.subheader("HHS Unaccompanied Alien Children (UAC) Program")
 
 st.write(
-    "This dashboard provides a data-driven analysis of care transitions, "
-    "CBP custody, transfers, HHS care, discharges, trends, and operational "
-    "patterns within the HHS Unaccompanied Alien Children (UAC) program."
+    "An interactive dashboard for exploring care transitions, "
+    "CBP custody, transfers, HHS care, and discharge activity "
+    "within the HHS Unaccompanied Alien Children (UAC) Program."
 )
 
-# ---------------------------------------------------------
-# LOAD DATASET
-# ---------------------------------------------------------
+# =========================================================
+# FIND THE CORRECT DATASET
+# =========================================================
 
-csv_file = "HHS_Unaccompanied_Alien_Children_Program.csv"
+possible_files = [
+    "HHS_Unaccompanied_Alien_Children_Program.csv",
+    "HHS_Unaccompanied_Alien_Children_Program(1).csv",
+    "HHS_UAC_cleaned.csv"
+]
 
-if not os.path.exists(csv_file):
+csv_file = None
 
-    # Try alternative filename if present
-    alternative = "HHS_Unaccompanied_Alien_Children_Program(1).csv"
+for file in possible_files:
+    if os.path.exists(file):
+        csv_file = file
+        break
 
-    if os.path.exists(alternative):
-        csv_file = alternative
-    else:
-        st.error(
-            "Dataset not found. Please make sure the correct CSV file "
-            "is uploaded to the GitHub repository."
-        )
-        st.stop()
+if csv_file is None:
+    st.error("❌ UAC dataset was not found in the repository.")
+    st.write("CSV files currently available:")
+
+    available = [
+        f for f in os.listdir(".")
+        if f.lower().endswith(".csv")
+    ]
+
+    st.write(available)
+    st.stop()
+
+# =========================================================
+# LOAD DATA
+# =========================================================
 
 try:
-
     df = pd.read_csv(csv_file)
 
 except Exception as e:
-
-    st.error("The CSV file could not be read.")
+    st.error("Unable to read the CSV dataset.")
     st.exception(e)
     st.stop()
 
-
-# ---------------------------------------------------------
+# =========================================================
 # CLEAN COLUMN NAMES
-# ---------------------------------------------------------
+# =========================================================
 
-df.columns = df.columns.str.strip()
+df.columns = (
+    df.columns
+    .astype(str)
+    .str.strip()
+)
 
-# Convert date column
-if "Date" in df.columns:
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
-    )
-
-# ---------------------------------------------------------
-# REMOVE COMPLETELY EMPTY ROWS
-# ---------------------------------------------------------
-
-before_rows = len(df)
+# Remove completely empty rows
+original_rows = len(df)
 
 df = df.dropna(how="all").copy()
 
-removed_rows = before_rows - len(df)
+removed_rows = original_rows - len(df)
 
-# ---------------------------------------------------------
+# =========================================================
+# IDENTIFY DATE COLUMN
+# =========================================================
+
+date_column = None
+
+for column in df.columns:
+
+    if str(column).strip().lower() == "date":
+        date_column = column
+        break
+
+if date_column:
+
+    df[date_column] = pd.to_datetime(
+        df[date_column],
+        errors="coerce"
+    )
+
+# =========================================================
 # IDENTIFY NUMERIC COLUMNS
-# ---------------------------------------------------------
+# =========================================================
 
-numeric_columns = [
-    "Children apprehended and placed in CBP custody*",
-    "Children in CBP custody",
-    "Children transferred out of CBP custody",
-    "Children in HHS Care",
-    "Children discharged from HHS Care"
-]
+for column in df.columns:
 
-for column in numeric_columns:
+    if column != date_column:
 
-    if column in df.columns:
-
-        df[column] = pd.to_numeric(
+        converted = pd.to_numeric(
             df[column],
             errors="coerce"
         )
 
-# Sort chronologically
-if "Date" in df.columns:
-    df = df.sort_values("Date")
+        # Only replace the column if it contains
+        # a reasonable amount of numeric data
+        if converted.notna().sum() > 0:
+            df[column] = converted
 
-
-# ---------------------------------------------------------
+# =========================================================
 # SUCCESS MESSAGE
-# ---------------------------------------------------------
+# =========================================================
 
 st.success(
-    f"Dataset loaded successfully. {len(df):,} usable records available."
+    f"Dataset loaded successfully — {len(df):,} records."
 )
 
 if removed_rows > 0:
     st.info(
-        f"{removed_rows:,} completely blank rows were removed before analysis."
+        f"{removed_rows:,} completely empty rows were removed."
     )
-
 
 # =========================================================
 # DATASET OVERVIEW
 # =========================================================
 
-st.header("📋 Dataset Overview")
+st.header("📊 Dataset Overview")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -133,8 +147,8 @@ with col1:
 
 with col2:
     st.metric(
-        "Total Variables",
-        len(df.columns)
+        "Total Columns",
+        f"{len(df.columns):,}"
     )
 
 with col3:
@@ -149,7 +163,6 @@ with col4:
         f"{int(df.duplicated().sum()):,}"
     )
 
-
 # =========================================================
 # DATA PREVIEW
 # =========================================================
@@ -161,7 +174,6 @@ st.dataframe(
     use_container_width=True
 )
 
-
 # =========================================================
 # DATA STRUCTURE
 # =========================================================
@@ -170,235 +182,24 @@ st.header("🔎 Data Structure")
 
 structure = pd.DataFrame({
     "Column": df.columns,
-    "Data Type": df.dtypes.astype(str),
-    "Missing Values": df.isna().sum().values,
-    "Unique Values": df.nunique().values
+    "Data Type": [
+        str(df[column].dtype)
+        for column in df.columns
+    ],
+    "Missing Values": [
+        int(df[column].isna().sum())
+        for column in df.columns
+    ],
+    "Unique Values": [
+        int(df[column].nunique(dropna=True))
+        for column in df.columns
+    ]
 })
 
 st.dataframe(
     structure,
     use_container_width=True
 )
-
-
-# =========================================================
-# KEY INSIGHTS
-# =========================================================
-
-st.header("💡 Key Insights")
-
-if "Date" in df.columns:
-
-    valid_dates = df["Date"].dropna()
-
-    if len(valid_dates) > 0:
-
-        st.write(
-            f"• The dataset covers **{valid_dates.min().strftime('%B %d, %Y')} "
-            f"to {valid_dates.max().strftime('%B %d, %Y')}**."
-        )
-
-st.write(
-    f"• The cleaned dataset contains **{len(df):,} records**."
-)
-
-st.write(
-    f"• The dataset contains **{len(df.columns)} variables**."
-)
-
-st.write(
-    f"• There are **{int(df.isna().sum().sum()):,} missing values** "
-    "across all variables."
-)
-
-st.write(
-    f"• There are **{int(df.duplicated().sum()):,} duplicate rows**."
-)
-
-
-# =========================================================
-# CARE TRANSITION ANALYSIS
-# =========================================================
-
-st.header("🏥 Care Transition & Outcome Analysis")
-
-st.write(
-    "The following visualizations examine movement through the UAC "
-    "care pathway, including CBP custody, transfers, HHS care, "
-    "and discharge."
-)
-
-
-# ---------------------------------------------------------
-# PREPARE DATA FOR CHARTS
-# ---------------------------------------------------------
-
-available_numeric = [
-    column
-    for column in numeric_columns
-    if column in df.columns
-]
-
-
-# =========================================================
-# TOTALS
-# =========================================================
-
-st.subheader("📊 Overall Program Activity")
-
-if available_numeric:
-
-    totals = df[available_numeric].sum(
-        numeric_only=True
-    ).sort_values(
-        ascending=False
-    )
-
-    totals_display = totals.rename(
-        lambda x: x.replace(
-            "Children ", ""
-        )
-    )
-
-    st.bar_chart(
-        totals_display
-    )
-
-
-# =========================================================
-# DAILY TRENDS
-# =========================================================
-
-if "Date" in df.columns and available_numeric:
-
-    st.subheader("📈 Care Transition Trends Over Time")
-
-    chart_df = df[
-        ["Date"] + available_numeric
-    ].dropna(
-        subset=["Date"]
-    )
-
-    chart_df = chart_df.set_index("Date")
-
-    st.line_chart(
-        chart_df,
-        use_container_width=True
-    )
-
-
-# =========================================================
-# CBP CUSTODY ANALYSIS
-# =========================================================
-
-st.subheader("👥 CBP Custody Analysis")
-
-cbp_columns = [
-    column
-    for column in [
-        "Children apprehended and placed in CBP custody*",
-        "Children in CBP custody",
-        "Children transferred out of CBP custody"
-    ]
-    if column in df.columns
-]
-
-if cbp_columns:
-
-    cbp_df = df[cbp_columns].sum().sort_values(
-        ascending=False
-    )
-
-    st.bar_chart(
-        cbp_df,
-        use_container_width=True
-    )
-
-
-# =========================================================
-# HHS CARE ANALYSIS
-# =========================================================
-
-st.subheader("🏥 HHS Care & Discharge Analysis")
-
-hhs_columns = [
-    column
-    for column in [
-        "Children in HHS Care",
-        "Children discharged from HHS Care"
-    ]
-    if column in df.columns
-]
-
-if hhs_columns:
-
-    hhs_df = df[hhs_columns].sum()
-
-    st.bar_chart(
-        hhs_df,
-        use_container_width=True
-    )
-
-
-# =========================================================
-# DISCHARGE TREND
-# =========================================================
-
-if (
-    "Date" in df.columns
-    and "Children discharged from HHS Care" in df.columns
-):
-
-    st.subheader("📤 HHS Discharge Trend")
-
-    discharge_df = df[
-        [
-            "Date",
-            "Children discharged from HHS Care"
-        ]
-    ].dropna(
-        subset=["Date"]
-    )
-
-    discharge_df = discharge_df.set_index(
-        "Date"
-    )
-
-    st.line_chart(
-        discharge_df,
-        use_container_width=True
-    )
-
-
-# =========================================================
-# TRANSFER TREND
-# =========================================================
-
-if (
-    "Date" in df.columns
-    and "Children transferred out of CBP custody" in df.columns
-):
-
-    st.subheader("🔄 Transfer Out of CBP Custody")
-
-    transfer_df = df[
-        [
-            "Date",
-            "Children transferred out of CBP custody"
-        ]
-    ].dropna(
-        subset=["Date"]
-    )
-
-    transfer_df = transfer_df.set_index(
-        "Date"
-    )
-
-    st.area_chart(
-        transfer_df,
-        use_container_width=True
-    )
-
 
 # =========================================================
 # MISSING DATA ANALYSIS
@@ -419,7 +220,7 @@ if len(missing) > 0:
     missing_table = pd.DataFrame({
         "Column": missing.index,
         "Missing Values": missing.values,
-        "Missing %": (
+        "Missing Percentage": (
             missing.values / len(df) * 100
         ).round(2)
     })
@@ -430,8 +231,9 @@ if len(missing) > 0:
     )
 
     st.bar_chart(
-        missing,
-        use_container_width=True
+        missing_table.set_index("Column")[
+            "Missing Values"
+        ]
     )
 
 else:
@@ -440,55 +242,336 @@ else:
         "No missing values were detected."
     )
 
+# =========================================================
+# NUMERIC VARIABLES
+# =========================================================
+
+numeric_columns = df.select_dtypes(
+    include="number"
+).columns.tolist()
 
 # =========================================================
-# SUMMARY TABLE
+# PROGRAM ACTIVITY
 # =========================================================
 
-st.header("📊 Summary Statistics")
+st.header("📈 Program Activity")
 
-if available_numeric:
+if numeric_columns:
 
-    summary = df[
-        available_numeric
-    ].describe().T
-
-    summary = summary.rename(
-        columns={
-            "count": "Count",
-            "mean": "Mean",
-            "std": "Standard Deviation",
-            "min": "Minimum",
-            "25%": "25th Percentile",
-            "50%": "Median",
-            "75%": "75th Percentile",
-            "max": "Maximum"
-        }
+    totals = (
+        df[numeric_columns]
+        .sum()
+        .sort_values(ascending=False)
     )
 
-    st.dataframe(
-        summary.round(2),
+    st.bar_chart(
+        totals,
         use_container_width=True
     )
 
+    st.subheader("Program Activity Summary")
+
+    totals_table = pd.DataFrame({
+        "Indicator": totals.index,
+        "Total": totals.values
+    })
+
+    st.dataframe(
+        totals_table,
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "No numeric variables were detected."
+    )
 
 # =========================================================
-# DOWNLOAD CLEANED DATASET
+# TIME-BASED ANALYSIS
 # =========================================================
 
-st.header("⬇️ Download Cleaned Dataset")
+if date_column and numeric_columns:
 
-csv_output = df.to_csv(
-    index=False
-).encode("utf-8")
+    st.header("📅 Trends Over Time")
 
-st.download_button(
-    label="Download Cleaned CSV",
-    data=csv_output,
-    file_name="HHS_UAC_cleaned.csv",
-    mime="text/csv"
+    trend_data = df[
+        [date_column] + numeric_columns
+    ].copy()
+
+    trend_data = trend_data.dropna(
+        subset=[date_column]
+    )
+
+    trend_data = trend_data.sort_values(
+        date_column
+    )
+
+    if not trend_data.empty:
+
+        trend_data = trend_data.set_index(
+            date_column
+        )
+
+        st.line_chart(
+            trend_data,
+            use_container_width=True
+        )
+
+# =========================================================
+# SELECT INDICATOR
+# =========================================================
+
+st.header("🔍 Indicator Analysis")
+
+if numeric_columns:
+
+    selected_indicator = st.selectbox(
+        "Select an indicator",
+        numeric_columns
+    )
+
+    indicator_data = df[
+        [date_column, selected_indicator]
+    ].copy() if date_column else df[
+        [selected_indicator]
+    ].copy()
+
+    if date_column:
+
+        indicator_data = indicator_data.dropna(
+            subset=[date_column]
+        )
+
+        indicator_data = indicator_data.sort_values(
+            date_column
+        )
+
+        indicator_data = indicator_data.set_index(
+            date_column
+        )
+
+    st.line_chart(
+        indicator_data,
+        use_container_width=True
+    )
+
+# =========================================================
+# CBP CUSTODY ANALYSIS
+# =========================================================
+
+st.header("👥 CBP Custody Analysis")
+
+cbp_keywords = [
+    "apprehended",
+    "cbp custody",
+    "transferred out"
+]
+
+cbp_columns = [
+    column
+    for column in numeric_columns
+    if any(
+        keyword in column.lower()
+        for keyword in cbp_keywords
+    )
+]
+
+if cbp_columns:
+
+    cbp_data = df[
+        cbp_columns
+    ].sum().sort_values(
+        ascending=False
+    )
+
+    st.bar_chart(
+        cbp_data,
+        use_container_width=True
+    )
+
+    st.dataframe(
+        pd.DataFrame({
+            "CBP Indicator": cbp_data.index,
+            "Total": cbp_data.values
+        }),
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "No CBP-specific numeric indicators were detected."
+    )
+
+# =========================================================
+# HHS CARE ANALYSIS
+# =========================================================
+
+st.header("🏥 HHS Care Analysis")
+
+hhs_columns = [
+    column
+    for column in numeric_columns
+    if "hhs" in column.lower()
+]
+
+if hhs_columns:
+
+    hhs_data = df[
+        hhs_columns
+    ].sum().sort_values(
+        ascending=False
+    )
+
+    st.bar_chart(
+        hhs_data,
+        use_container_width=True
+    )
+
+    st.dataframe(
+        pd.DataFrame({
+            "HHS Indicator": hhs_data.index,
+            "Total": hhs_data.values
+        }),
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "No HHS-specific numeric indicators were detected."
+    )
+
+# =========================================================
+# TRANSFER ANALYSIS
+# =========================================================
+
+transfer_columns = [
+    column
+    for column in numeric_columns
+    if "transfer" in column.lower()
+]
+
+if transfer_columns:
+
+    st.header("🔄 Transfer Analysis")
+
+    transfer_data = df[
+        transfer_columns
+    ].sum().sort_values(
+        ascending=False
+    )
+
+    st.bar_chart(
+        transfer_data,
+        use_container_width=True
+    )
+
+# =========================================================
+# DISCHARGE ANALYSIS
+# =========================================================
+
+discharge_columns = [
+    column
+    for column in numeric_columns
+    if "discharged" in column.lower()
+]
+
+if discharge_columns:
+
+    st.header("📤 Discharge Analysis")
+
+    discharge_data = df[
+        discharge_columns
+    ].sum().sort_values(
+        ascending=False
+    )
+
+    st.bar_chart(
+        discharge_data,
+        use_container_width=True
+    )
+
+    st.dataframe(
+        pd.DataFrame({
+            "Discharge Indicator": discharge_data.index,
+            "Total": discharge_data.values
+        }),
+        use_container_width=True
+    )
+
+# =========================================================
+# STATISTICAL SUMMARY
+# =========================================================
+
+st.header("📐 Statistical Summary")
+
+if numeric_columns:
+
+    statistics = df[
+        numeric_columns
+    ].describe().T
+
+    statistics = statistics.round(2)
+
+    st.dataframe(
+        statistics,
+        use_container_width=True
+    )
+
+# =========================================================
+# KEY INSIGHTS
+# =========================================================
+
+st.header("💡 Key Insights")
+
+st.write(
+    f"**1. Dataset size:** The dashboard contains "
+    f"**{len(df):,} records** across "
+    f"**{len(df.columns)} variables**."
 )
 
+st.write(
+    f"**2. Data quality:** The dataset contains "
+    f"**{int(df.isna().sum().sum()):,} missing values** "
+    f"and **{int(df.duplicated().sum()):,} duplicate rows**."
+)
+
+if numeric_columns:
+
+    highest_indicator = (
+        df[numeric_columns]
+        .sum()
+        .idxmax()
+    )
+
+    highest_value = (
+        df[numeric_columns]
+        .sum()
+        .max()
+    )
+
+    st.write(
+        f"**3. Highest cumulative indicator:** "
+        f"**{highest_indicator}** has the highest "
+        f"cumulative recorded value "
+        f"(**{highest_value:,.0f}**)."
+    )
+
+if date_column:
+
+    valid_dates = df[date_column].dropna()
+
+    if not valid_dates.empty:
+
+        st.write(
+            f"**4. Time coverage:** The available date "
+            f"records span from **"
+            f"{valid_dates.min().strftime('%d %b %Y')}** "
+            f"to **"
+            f"{valid_dates.max().strftime('%d %b %Y')}**."
+        )
 
 # =========================================================
 # CONCLUSION
@@ -497,15 +580,32 @@ st.download_button(
 st.header("📝 Conclusion")
 
 st.write(
-    "The dashboard provides an interactive overview of the HHS "
-    "Unaccompanied Alien Children (UAC) dataset. The analysis "
-    "examines movement through CBP custody, transfers into and "
-    "through HHS care, discharge activity, temporal trends, "
-    "and data completeness. These visualizations can help "
-    "identify patterns in care transitions and potential "
-    "operational bottlenecks."
+    "This dashboard provides an interactive analysis of the "
+    "HHS Unaccompanied Alien Children (UAC) Program dataset. "
+    "It examines program activity, CBP custody, transfers, "
+    "HHS care, discharge activity, trends over time, and "
+    "data quality. The visualizations allow users to explore "
+    "patterns in care transitions and identify areas that may "
+    "require further operational analysis."
+)
+
+# =========================================================
+# DOWNLOAD
+# =========================================================
+
+st.header("⬇️ Download Analyzed Dataset")
+
+download_data = df.to_csv(
+    index=False
+).encode("utf-8")
+
+st.download_button(
+    label="Download CSV",
+    data=download_data,
+    file_name="HHS_UAC_Analyzed.csv",
+    mime="text/csv"
 )
 
 st.success(
-    "Dashboard analysis completed successfully."
+    "✅ Dashboard analysis completed successfully."
 )
