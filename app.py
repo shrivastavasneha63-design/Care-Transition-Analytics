@@ -26,18 +26,13 @@ st.write(
 # ---------------------------------------------------------
 # FIND CSV FILE
 # ---------------------------------------------------------
-csv_files = [
-    f for f in os.listdir(".")
-    if f.lower().endswith(".csv")
-]
+csv_file = "HHS_Unaccompanied_Alien_Children_Program(1).csv"
 
-if not csv_files:
-    st.warning("No CSV dataset found in the repository.")
-    st.info("Please upload the project CSV file to the GitHub repository.")
+if not os.path.exists(csv_file):
+    st.error(f"Dataset file not found: {csv_file}")
+    st.write("Files available in the application folder:")
+    st.write(os.listdir("."))
     st.stop()
-
-csv_file = csv_files[0]
-
 # ---------------------------------------------------------
 # LOAD DATASET
 # ---------------------------------------------------------
